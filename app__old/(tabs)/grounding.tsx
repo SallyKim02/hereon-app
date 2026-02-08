@@ -10,10 +10,10 @@ type CategoryItem = {
 
 const ITEMS: CategoryItem[] = [
   { key: "grounding", label: "그라운딩", href: "/(tabs)/grounding" },
-  { key: "breathing", label: "호흡 조절", href: "/(tabs)/breathing" },
-  { key: "cbt", label: "CBT 카드", href: "/(tabs)/cbt" },
+  { key: "breathing", label: "호흡 연습", href: "/(tabs)/breathing" },
+  { key: "cbt", label: "CBT", href: "/(tabs)/cbt" },
   { key: "videos", label: "영상 시청", href: "/(tabs)/videos" },
-  { key: "emergency", label: "응급 키트", href: "/(tabs)/emergency" },
+  { key: "emergency", label: "마음 SOS", href: "/(tabs)/emergency" },
 ];
 
 export default function CategoryScreen() {
@@ -40,7 +40,7 @@ export default function CategoryScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.title}>카테고리</Text>
+      <Text style={styles.title}>HereOn</Text>
 
       <View style={styles.list}>
         {ITEMS.map((it) => {

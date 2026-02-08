@@ -1,4 +1,7 @@
-import { useState } from "react";
+import React, { useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+
 import GPage1_Intro from "./GPage1_Intro";
 import GPage2_Visual from "./GPage2_Visual";
 import GPage3_Touch from "./GPage3_Touch";
@@ -7,16 +10,30 @@ import GPage5_Smell from "./GPage5_Smell";
 import GPage6_Taste from "./GPage6_Taste";
 import GPage7_Outro from "./GPage7_Outro";
 
-type Step = "intro" | "visual" | "touch" | "sound" | "smell" | "taste" | "outro";
+const BG = "#F2F0EE";
 
 export default function GroundingFlowScreen() {
-  const [step, setStep] = useState<Step>("intro");
+  const router = useRouter();
+  const [step, setStep] = useState(1);
 
-  if (step === "intro") return <GPage1_Intro onContinue={() => setStep("visual")} />;
-  if (step === "visual") return <GPage2_Visual onContinue={() => setStep("touch")} />;
-  if (step === "touch") return <GPage3_Touch onContinue={() => setStep("sound")} />;
-  if (step === "sound") return <GPage4_Sound onContinue={() => setStep("smell")} />;
-  if (step === "smell") return <GPage5_Smell onContinue={() => setStep("taste")} />;
-  if (step === "taste") return <GPage6_Taste onContinue={() => setStep("outro")} />;
-  return <GPage7_Outro onDone={() => setStep("intro")} />;
+  const prev = () => setStep((s) => Math.max(1, s - 1));
+  const next = () => setStep((s) => Math.min(7, s + 1));
+
+  const doneToHome = () => {
+    // ✅ 완료하면 홈 메뉴로
+    router.replace("/");
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: BG }} edges={["top"]}>
+      {step === 1 && <GPage1_Intro onContinue={next} />}
+
+      {step === 2 && <GPage2_Visual onPrev={prev} onContinue={next} />}
+      {step === 3 && <GPage3_Touch onPrev={prev} onContinue={next} />}
+      {step === 4 && <GPage4_Sound onPrev={prev} onContinue={next} />}
+      {step === 5 && <GPage5_Smell onPrev={prev} onContinue={next} />}
+      {step === 6 && <GPage6_Taste onPrev={prev} onContinue={next} />}
+      {step === 7 && <GPage7_Outro onPrev={prev} onDone={doneToHome} />}
+    </SafeAreaView>
+  );
 }

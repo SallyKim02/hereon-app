@@ -1,30 +1,57 @@
+import { useCallback, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 
 type CategoryItem = { key: string; label: string; href: string };
 
 const ITEMS: CategoryItem[] = [
   { key: "grounding", label: "그라운딩", href: "/grounding" },
-  { key: "breathing", label: "호흡 조절", href: "/breathing" },
-  { key: "cbt", label: "CBT 카드", href: "/cbt" },
-  { key: "videos", label: "영상 시청", href: "/videos" },
-  { key: "emergency", label: "응급 키트", href: "/emergency" },
+  { key: "breathing", label: "호흡 연습", href: "/breathing" },
+  { key: "cbt", label: "CBT", href: "/cbt" },
+  { key: "education", label: "마음 알아보기", href: "/education" },
+  { key: "emergency", label: "SOS", href: "/emergency" },
 ];
+
+const HIGHLIGHT_MS = 1500;
 
 export default function HomeMenuScreen() {
   const router = useRouter();
-  const selectedKey = "grounding";
+
+  const [pressedKey, setPressedKey] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHighlight = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setPressedKey(null);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      clearHighlight();
+      return () => clearHighlight();
+    }, [clearHighlight])
+  );
+
+  const go = (it: CategoryItem) => {
+    setPressedKey(it.key);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setPressedKey(null);
+      timerRef.current = null;
+    }, HIGHLIGHT_MS);
+    router.push(it.href);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.screen}>
         {/* Top row */}
         <View style={styles.topRow}>
-          {/* pill: icon 제거하고 1/48만 */}
-
           <Pressable
-            onPress={() => router.push("/my")}
+            // ✅ 햄버거 → 마이페이지(/mypage)
+            onPress={() => router.push("/mypage")}
             style={({ pressed }) => [styles.menuBtn, pressed && { opacity: 0.6 }]}
             hitSlop={10}
           >
@@ -32,15 +59,16 @@ export default function HomeMenuScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.title}>카테고리</Text>
+        <Text style={styles.title}>HereOn</Text>
 
         <View style={styles.list}>
           {ITEMS.map((it) => {
-            const selected = it.key === selectedKey;
+            const selected = it.key === pressedKey;
+
             return (
               <Pressable
                 key={it.key}
-                onPress={() => router.push(it.href)}
+                onPress={() => go(it)}
                 style={({ pressed }) => [
                   styles.card,
                   selected ? styles.cardSelected : styles.cardDefault,
@@ -68,7 +96,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
     paddingHorizontal: 24,
-    paddingTop: 10, // safeArea 아래에서 살짝만
+    paddingTop: 10,
   },
 
   topRow: {
@@ -77,23 +105,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     marginTop: 6,
   },
-
-  progressPill: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 18,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: { elevation: 1 },
-    }),
-  },
-  progressText: { fontSize: 14, color: "#111", fontWeight: "600" },
 
   menuBtn: {
     width: 44,
@@ -104,31 +115,23 @@ const styles = StyleSheet.create({
   menuIcon: { fontSize: 26, color: "#111" },
 
   title: {
-    marginTop: 24,
+    marginTop: 54,
     marginBottom: 18,
     textAlign: "center",
-    fontSize: 28,
+    fontSize: 45,
     fontWeight: "800",
     color: "#111",
     letterSpacing: -0.5,
   },
 
-  list: { marginTop: 8, gap: 18 },
+  list: { marginTop: 20, gap: 15, alignItems:"center" },
 
   card: {
-    height: 76,
+    height: 72,
+    width:300,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.10,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 10 },
-      },
-      android: { elevation: 3 },
-    }),
   },
   cardDefault: { backgroundColor: "#FFFFFF" },
   cardSelected: { backgroundColor: DARK },

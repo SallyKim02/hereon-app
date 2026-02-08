@@ -1,11 +1,9 @@
 import { useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import GHeader from "./GHeader";
 
-type SoundMission = {
-  key: string;
-  options: string[];
-};
+type SoundMission = { key: string; options: string[] };
 
 const MISSIONS: SoundMission[] = [
   { key: "m1", options: ["튀김", "빗방울", "삼겹살 굽기"] },
@@ -13,15 +11,17 @@ const MISSIONS: SoundMission[] = [
   { key: "m3", options: ["분무기", "머리 빗기", "먼지 제거"] },
 ];
 
-export default function GPage4_Sound({ onContinue }: { onContinue: () => void }) {
+const BG = "#F2F0EE";
+const DARK = "#3B3B3B";
+
+export default function GPage4_Sound({ onPrev, onContinue }: { onPrev?: () => void; onContinue: () => void }) {
   const [idx, setIdx] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
 
-  const remaining = Math.max(0, (MISSIONS.length - 1) - idx);
+  const remaining = Math.max(0, MISSIONS.length - 1 - idx);
   const isLast = idx >= MISSIONS.length - 1;
 
   const next = () => {
-    if (!picked) return;
     if (isLast) onContinue();
     else {
       setIdx((v) => v + 1);
@@ -31,7 +31,9 @@ export default function GPage4_Sound({ onContinue }: { onContinue: () => void })
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.screen}>
+      <GHeader title="그라운딩" onPrev={onPrev} onNext={next} />
+
+      <ScrollView contentContainerStyle={styles.screen}>
         <Text style={styles.h1}>무엇이 들리나요?</Text>
         <Text style={styles.desc}>가장 비슷한 소리를 선택해주세요</Text>
 
@@ -45,57 +47,40 @@ export default function GPage4_Sound({ onContinue }: { onContinue: () => void })
         </View>
 
         <View style={styles.options}>
-            {MISSIONS[idx].options.map((opt, i) => {
+          {MISSIONS[idx].options.map((opt, i) => {
             const id = `${idx}-${i}-${opt}`;
             const on = picked === id;
 
             return (
-                <Pressable
-                key={id}
-                onPress={() => setPicked(id)}
-                style={[styles.opt, on && styles.optOn]}
-                >
+              <Pressable key={id} onPress={() => setPicked(id)} style={[styles.opt, on && styles.optOn]}>
                 <Text style={[styles.optText, on && styles.optTextOn]}>{opt}</Text>
-                </Pressable>
+              </Pressable>
             );
-            })}
+          })}
         </View>
 
-        <Pressable
-          onPress={next}
-          disabled={!picked}
-          style={[styles.cta, !picked && styles.ctaDisabled]}
-        >
-          <Text style={[styles.ctaText, !picked && styles.ctaTextDisabled]}>
-            {isLast ? "Continue" : "다음 미션"}
-          </Text>
+        <Pressable onPress={next} style={styles.cta}>
+          <Text style={styles.ctaText}>{isLast ? "Continue" : "다음"}</Text>
         </Pressable>
-      </View>
+
+        <View style={{ height: 18 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const BG = "#F2F0EE";
-const DARK = "#3B3B3B";
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
-  screen: { flex: 1, backgroundColor: BG, paddingHorizontal: 20, paddingTop: 12 },
+  screen: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 22 },
 
-  h1: { fontSize: 24, fontWeight: "800", color: "#111", marginTop: 8 },
+  h1: { fontSize: 24, fontWeight: "800", color: "#111", marginTop: 6 },
   desc: { marginTop: 8, fontSize: 14, color: "#333" },
   progress: { marginTop: 12, fontSize: 13, fontWeight: "700", color: "#111" },
 
   playerCard: { marginTop: 14, backgroundColor: "#FFF", borderRadius: 18, padding: 16, gap: 10 },
   playerTitle: { fontSize: 14, fontWeight: "800", color: "#111" },
 
-  secondary: {
-    height: 44,
-    borderRadius: 999,
-    backgroundColor: "#F2F0EE",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  secondary: { height: 44, borderRadius: 999, backgroundColor: "#F2F0EE", alignItems: "center", justifyContent: "center" },
   secondaryText: { fontSize: 14, fontWeight: "800", color: "#111" },
 
   options: { marginTop: 14, gap: 10 },
@@ -104,16 +89,6 @@ const styles = StyleSheet.create({
   optText: { fontSize: 14, fontWeight: "800", color: "#111" },
   optTextOn: { color: "#FFF" },
 
-  cta: {
-    marginTop: "auto",
-    marginBottom: 18,
-    height: 54,
-    borderRadius: 999,
-    backgroundColor: DARK,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ctaDisabled: { backgroundColor: "#B9B9B9" },
+  cta: { marginTop: 16, height: 54, borderRadius: 999, backgroundColor: DARK, alignItems: "center", justifyContent: "center" },
   ctaText: { color: "#FFF", fontSize: 16, fontWeight: "800" },
-  ctaTextDisabled: { color: "#F2F2F2" },
 });

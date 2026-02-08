@@ -1,2 +1,5 @@
-import MyScreen from "../screens/MyScreen";
-export default function MyRoute() { return <MyScreen />; }
+import { Redirect } from "expo-router";
+
+export default function MyRoute() {
+  return <Redirect href="/mypage" />;
+}

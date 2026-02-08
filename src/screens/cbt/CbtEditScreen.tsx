@@ -1,204 +1,514 @@
-import { useMemo, useState } from "react";
-import { SafeAreaView, StyleSheet, Text, View, TextInput, Pressable, ScrollView, Alert } from "react-native";
-import { router } from "expo-router";
-import { CBT_CATEGORIES, PHYSICAL_REACTIONS, type CbtCategory, type CbtRecord } from "./cbtTypes";
-import { loadCbtRecords, saveCbtRecords } from "./cbtStorage";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  Modal,
+  ScrollView,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 
-function uuid() {
-  // RN에서 crypto가 없을 수 있어서 간단 대체(나중에 uuid 패키지로 교체 추천)
-  return `cbt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+type MultiKey = "category" | "emotion" | "body" | "year" | "month";
+
+const BG = "#F2F0EE";
+const CARD = "#FFFFFF";
+const TEXT = "#111111";
+const PLACEHOLDER = "rgba(17,17,17,0.35)";
+const LINE = "rgba(17,17,17,0.10)";
+const BTN = "#2F2F2F";
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function weekdayKo(d: Date) {
+  return ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+}
+
+// ✅ 변경: YYYY년 MM월 D일 요일 HH:mm
+function formatAutoStampKorean(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = pad2(d.getMonth() + 1);
+  const dd = String(d.getDate()); // 1~31 (요청은 DDD였지만 실제 일(day)은 가변이 자연스러움)
+  const w = weekdayKo(d);
+  const hh = pad2(d.getHours());
+  const min = pad2(d.getMinutes());
+  return `${yyyy}년 ${mm}월 ${dd}일 ${w}요일 ${hh}:${min}`;
+}
+
+function uniq(arr: string[]) {
+  return Array.from(new Set(arr));
+}
+
+function PillFilter({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.filterPill} hitSlop={8}>
+      <Text style={styles.filterText}>{label}</Text>
+      <Text style={styles.filterCaret}>▾</Text>
+    </Pressable>
+  );
+}
+
+function MultiSelectBox({
+  valueText,
+  placeholder,
+  onPress,
+}: {
+  valueText: string;
+  placeholder: string;
+  onPress: () => void;
+}) {
+  const isEmpty = valueText.trim().length === 0;
+  return (
+    <Pressable onPress={onPress} style={styles.ddInput} hitSlop={8}>
+      <Text style={[styles.ddValue, isEmpty && { color: PLACEHOLDER }]}>
+        {isEmpty ? placeholder : valueText}
+      </Text>
+      <Text style={styles.ddCaret}>▾</Text>
+    </Pressable>
+  );
 }
 
 export default function CbtEditScreen() {
-  const [category, setCategory] = useState<CbtCategory>("불안");
+  const router = useRouter();
+
+  // ✅ 변경: 날짜/시간 매 분 자동 갱신
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const autoStamp = useMemo(() => formatAutoStampKorean(now), [now]);
+
+  // 입력값
   const [situation, setSituation] = useState("");
-  const [emotion, setEmotion] = useState("");
   const [automaticThought, setAutomaticThought] = useState("");
   const [alternativeThought, setAlternativeThought] = useState("");
-  const [pickedPhys, setPickedPhys] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
 
-  const happenedAt = useMemo(() => Date.now(), []);
+  // 복수 선택 옵션
+  const CATEGORIES = useMemo(
+    () => ["대인관계", "학업", "직장", "건강", "정서", "불안", "자존감", "기타"],
+    []
+  );
+  const EMOTIONS = useMemo(
+    () => ["불안", "두려움", "긴장", "우울", "슬픔", "무기력", "분노", "죄책감", "수치심"],
+    []
+  );
+  const BODY = useMemo(
+    () => [
+      "심장이 빨리 뜀",
+      "가슴이 답답하거나 조이는 느낌",
+      "숨이 가빠짐",
+      "어지러움",
+      "멍함",
+      "손발이 차가워짐",
+      "땀이 남",
+      "근육이 긴장됨",
+      "몸에 힘이 빠짐",
+      "속이 안 좋음",
+      "얼굴이 달아오름",
+    ],
+    []
+  );
 
-  const togglePhys = (label: string) => {
-    setPickedPhys((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]));
+  const [pickedCategories, setPickedCategories] = useState<string[]>([]);
+  const [pickedEmotions, setPickedEmotions] = useState<string[]>([]);
+  const [pickedBody, setPickedBody] = useState<string[]>([]);
+
+  const [open, setOpen] = useState<MultiKey | null>(null);
+
+  const valueText = (arr: string[]) => arr.join(", ");
+
+  const togglePick = (
+    _key: MultiKey,
+    item: string,
+    getter: () => string[],
+    setter: (v: string[]) => void
+  ) => {
+    const cur = getter();
+    const has = cur.includes(item);
+    const next = has ? cur.filter((x) => x !== item) : uniq([...cur, item]);
+    setter(next);
   };
 
-  const onSave = async () => {
-    if (!situation.trim()) {
-      Alert.alert("입력 필요", "상황을 먼저 작성해 주세요.");
-      return;
-    }
-    if (!automaticThought.trim()) {
-      Alert.alert("입력 필요", "자동적 사고를 작성해 주세요.");
-      return;
-    }
-    if (!alternativeThought.trim()) {
-      Alert.alert("입력 필요", "대안적 사고를 작성해 주세요.");
-      return;
-    }
+  const onSave = () => {
+    const payload = {
+      createdAt: new Date().toISOString(),
+      autoStamp, // ✅ 한국어 포맷 자동 기록
+      categories: pickedCategories,
+      emotions: pickedEmotions,
+      bodyReactions: pickedBody,
+      situation,
+      automaticThought,
+      alternativeThought,
+    };
+    // eslint-disable-next-line no-console
+    console.log("[CBT SAVE]", payload);
 
-    setSaving(true);
-    try {
-      const now = Date.now();
-      const record: CbtRecord = {
-        id: uuid(),
-        createdAt: now,
-        updatedAt: now,
-        happenedAt,
-        category,
-        situation: situation.trim(),
-        emotion: emotion.trim(),
-        physicalReactions: pickedPhys,
-        automaticThought: automaticThought.trim(),
-        alternativeThought: alternativeThought.trim(),
-      };
-
-      const prev = await loadCbtRecords();
-      await saveCbtRecords([record, ...prev]);
-      router.replace("/cbt"); // 저장 후 홈으로
-    } finally {
-      setSaving(false);
-    }
+    router.back();
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.topRow}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <View style={styles.screen}>
+        {/* Top bar */}
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <Text style={styles.backArrow}>‹</Text>
           </Pressable>
-          <Text style={styles.title}>CBT 작성</Text>
-          <View style={{ width: 44 }} />
+
+          <Text style={styles.topTitle}>CBT 카드</Text>
+
+          {/* 우측 공간 맞춤용 */}
+          <View style={{ width: 28 }} />
         </View>
 
-        <Text style={styles.label}>카테고리</Text>
-        <View style={styles.chips}>
-          {CBT_CATEGORIES.map((c) => {
-            const on = category === c;
-            return (
-              <Pressable key={c} onPress={() => setCategory(c)} style={[styles.chip, on && styles.chipOn]}>
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{c}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 32 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ✅ 날짜: 카테고리 박스와 같은 "폭(=한 줄 전체)" + 같은 모양의 박스 */}
+          <View style={styles.datePillRow}>
+            <View style={styles.datePill}>
+              <Text style={styles.datePillText}>{autoStamp}</Text>
+            </View>
+          </View>
 
-        <Text style={styles.label}>상황</Text>
-        <TextInput
-          value={situation}
-          onChangeText={setSituation}
-          placeholder="어디에서, 누구와, 어떤 상황이었나요?"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          style={[styles.input, styles.textArea]}
-          multiline
-        />
+          {/* ✅ 카테고리 박스(폭 유지) */}
+          <View style={styles.filterRow}>
+            <PillFilter label="카테고리" onPress={() => setOpen("category")} />
+          </View>
 
-        <Text style={styles.label}>감정</Text>
-        <TextInput
-          value={emotion}
-          onChangeText={setEmotion}
-          placeholder="예: 불안함, 초조함, 두려움…"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          style={styles.input}
-        />
+          <Text style={styles.sectionTitle}>상황</Text>
+          <View style={styles.textArea}>
+            <TextInput
+              value={situation}
+              onChangeText={setSituation}
+              placeholder="어디에서, 누구와, 어떤 상황이었나요?"
+              placeholderTextColor={PLACEHOLDER}
+              multiline
+              style={styles.textAreaInput}
+            />
+          </View>
 
-        <Text style={styles.label}>신체 반응(복수 선택)</Text>
-        <View style={styles.chips}>
-          {PHYSICAL_REACTIONS.map((p) => {
-            const on = pickedPhys.includes(p);
-            return (
-              <Pressable key={p} onPress={() => togglePhys(p)} style={[styles.chip, on && styles.chipOn]}>
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{p}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          {/* 감정 / 신체 반응 2열 */}
+          <View style={styles.twoCol}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>감정</Text>
+              <MultiSelectBox
+                valueText={valueText(pickedEmotions)}
+                placeholder="선택하기"
+                onPress={() => setOpen("emotion")}
+              />
+            </View>
 
-        <Text style={styles.label}>자동적 사고</Text>
-        <TextInput
-          value={automaticThought}
-          onChangeText={setAutomaticThought}
-          placeholder="떠오른 생각을 그대로 적어주세요"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          style={[styles.input, styles.textArea]}
-          multiline
-        />
+            <View style={{ width: 14 }} />
 
-        <Text style={styles.label}>대안적 사고</Text>
-        <TextInput
-          value={alternativeThought}
-          onChangeText={setAlternativeThought}
-          placeholder="증거를 검토해, 보다 균형 잡힌 생각을 적어주세요"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          style={[styles.input, styles.textArea]}
-          multiline
-        />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>신체 반응</Text>
+              <MultiSelectBox
+                valueText={valueText(pickedBody)}
+                placeholder="선택하기"
+                onPress={() => setOpen("body")}
+              />
+            </View>
+          </View>
 
-        <Pressable onPress={onSave} disabled={saving} style={[styles.saveBtn, saving && styles.saveBtnOff]}>
-          <Text style={styles.saveText}>{saving ? "저장 중…" : "저장하기"}</Text>
+          <Text style={[styles.sectionTitle, { marginTop: 18 }]}>자동적 사고</Text>
+          <View style={styles.textArea}>
+            <TextInput
+              value={automaticThought}
+              onChangeText={setAutomaticThought}
+              placeholder="떠오른 생각을 그대로 적어주세요"
+              placeholderTextColor={PLACEHOLDER}
+              multiline
+              style={styles.textAreaInput}
+            />
+          </View>
+
+          <Text style={[styles.sectionTitle, { marginTop: 18 }]}>대안적 사고</Text>
+          <View style={styles.textArea}>
+            <TextInput
+              value={alternativeThought}
+              onChangeText={setAlternativeThought}
+              placeholder="증거를 검토해, 보다 균형 잡힌 생각을 적어주세요"
+              placeholderTextColor={PLACEHOLDER}
+              multiline
+              style={styles.textAreaInput}
+            />
+          </View>
+
+          <View style={{ height: 22 }} />
+
+          <Pressable
+            onPress={onSave}
+            style={({ pressed }) => [
+              styles.saveBtn,
+              pressed && { opacity: 0.96, transform: [{ scale: 0.995 }] },
+            ]}
+          >
+            <Text style={styles.saveText}>저장하기</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      {/* Multi-select dropdown modal */}
+      <Modal
+        transparent
+        visible={open !== null}
+        animationType="fade"
+        onRequestClose={() => setOpen(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setOpen(null)}>
+          <View />
         </Pressable>
-      </ScrollView>
+
+        <View style={styles.modalSheet}>
+          <ScrollView>
+            {open === "category" &&
+              CATEGORIES.map((x) => {
+                const on = pickedCategories.includes(x);
+                return (
+                  <Pressable
+                    key={x}
+                    onPress={() =>
+                      togglePick(
+                        "category",
+                        x,
+                        () => pickedCategories,
+                        setPickedCategories
+                      )
+                    }
+                    style={styles.modalItem}
+                  >
+                    <Text style={styles.modalText}>{x}</Text>
+                    <Text style={[styles.check, on && styles.checkOn]}>
+                      {on ? "✓" : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+
+            {open === "emotion" &&
+              EMOTIONS.map((x) => {
+                const on = pickedEmotions.includes(x);
+                return (
+                  <Pressable
+                    key={x}
+                    onPress={() =>
+                      togglePick("emotion", x, () => pickedEmotions, setPickedEmotions)
+                    }
+                    style={styles.modalItem}
+                  >
+                    <Text style={styles.modalText}>{x}</Text>
+                    <Text style={[styles.check, on && styles.checkOn]}>
+                      {on ? "✓" : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+
+            {open === "body" &&
+              BODY.map((x) => {
+                const on = pickedBody.includes(x);
+                return (
+                  <Pressable
+                    key={x}
+                    onPress={() => togglePick("body", x, () => pickedBody, setPickedBody)}
+                    style={styles.modalItem}
+                  >
+                    <Text style={styles.modalText}>{x}</Text>
+                    <Text style={[styles.check, on && styles.checkOn]}>
+                      {on ? "✓" : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </ScrollView>
+
+          {/* 하단 닫기(복수 선택이라 필요) */}
+          {(open === "category" || open === "emotion" || open === "body") && (
+            <Pressable onPress={() => setOpen(null)} style={styles.modalDone}>
+              <Text style={styles.modalDoneText}>완료</Text>
+            </Pressable>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const BG = "#F2F0EE";
-const DARK = "#3B3B3B";
-const CARD = "#FFFFFF";
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
-  container: { padding: 18, paddingBottom: 28 },
+  screen: { flex: 1, backgroundColor: BG, paddingHorizontal: 18, paddingTop: 6 },
 
-  topRow: {
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    paddingHorizontal: 2,
+    marginTop: 6,
+    marginBottom: 6,
   },
-  backBtn: {
-    width: 44,
+  backArrow: { fontSize: 34, color: TEXT, width: 28 },
+  topTitle: { fontSize: 22, fontWeight: "800", color: TEXT },
+
+  // ✅ 날짜 pill: 카테고리 박스와 같은 폭(=한 줄 전체) + 중앙정렬 텍스트
+  datePillRow: {
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  datePill: {
     height: 40,
-    borderRadius: 12,
+    borderRadius: 999,
     backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: LINE,
+    paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
+    alignSelf: "stretch", // ✅ 한 줄 전체 폭
   },
-  backText: { fontSize: 18, fontWeight: "900", color: DARK },
-  title: { fontSize: 18, fontWeight: "900", color: DARK },
+  datePillText: {
+    fontSize: 15, // ✅ 날짜 정보 크기 조금 키움
+    fontWeight: "900",
+    color: TEXT,
+    textAlign: "center",
+  },
 
-  label: { marginTop: 14, marginBottom: 8, fontWeight: "900", color: DARK },
-
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    backgroundColor: CARD,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  filterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+  filterPill: {
+    flex: 1,
+    height: 40,
     borderRadius: 999,
-  },
-  chipOn: { backgroundColor: DARK },
-  chipText: { color: DARK, fontWeight: "800", fontSize: 13 },
-  chipTextOn: { color: "#fff" },
-
-  input: {
     backgroundColor: CARD,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: DARK,
-    fontWeight: "700",
+    borderWidth: 1,
+    borderColor: LINE,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
-  textArea: { minHeight: 100, textAlignVertical: "top" },
+  filterText: { fontWeight: "900", color: TEXT },
+  filterCaret: {
+    color: "rgba(17,17,17,0.55)",
+    fontWeight: "900",
+    fontSize: 18, // ✅ 화살표 조금 더 크게
+    lineHeight: 18,
+  },
+
+  sectionTitle: { fontWeight: "900", color: TEXT, marginBottom: 8 },
+
+  // ✅ 그림자 제거: border만
+  textArea: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    padding: 12,
+    minHeight: 92,
+  },
+  textAreaInput: {
+    color: TEXT,
+    fontWeight: "700",
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+
+  twoCol: { flexDirection: "row", alignItems: "flex-start", marginTop: 14 },
+
+  ddInput: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    height: 44,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  ddValue: { fontWeight: "800", color: TEXT, flex: 1, paddingRight: 10 },
+  ddCaret: {
+    color: "rgba(17,17,17,0.55)",
+    fontWeight: "900",
+    fontSize: 18, // ✅ 화살표 조금 더 크게
+    lineHeight: 18,
+  },
 
   saveBtn: {
-    marginTop: 18,
-    backgroundColor: DARK,
-    paddingVertical: 14,
-    borderRadius: 18,
+    alignSelf: "center",
+    backgroundColor: BTN,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 38,
+    minWidth: 160,
     alignItems: "center",
   },
-  saveBtnOff: { opacity: 0.6 },
   saveText: { color: "#fff", fontWeight: "900", fontSize: 16 },
+
+  modalBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.12)",
+  },
+  modalSheet: {
+    position: "absolute",
+    left: 18,
+    right: 18,
+    top: 220,
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    maxHeight: 320,
+    overflow: "hidden",
+  },
+  modalItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(17,17,17,0.08)",
+  },
+  modalText: { color: TEXT, fontWeight: "800", flex: 1, paddingRight: 12 },
+  check: {
+    width: 18,
+    textAlign: "right",
+    color: "rgba(17,17,17,0.55)",
+    fontWeight: "900",
+  },
+  checkOn: { color: TEXT },
+
+  modalDone: {
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(17,17,17,0.06)",
+  },
+  modalDoneText: { fontWeight: "900", color: TEXT },
 });

@@ -1,15 +1,19 @@
 import { useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet } from "react-native";
+import { View, Text, Pressable, TextInput, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import GHeader from "./GHeader";
 
-export default function GPage5_Smell({ onContinue }: { onContinue: () => void }) {
+const BG = "#F2F0EE";
+const DARK = "#3B3B3B";
+
+export default function GPage5_Smell({ onPrev, onContinue }: { onPrev?: () => void; onContinue: () => void }) {
   const [value, setValue] = useState("");
-
-  const canContinue = value.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.screen}>
+      <GHeader title="그라운딩" onPrev={onPrev} onNext={onContinue} />
+
+      <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
         <Text style={styles.h1}>후각에 집중해보세요</Text>
         <Text style={styles.desc}>어떤 냄새를 맡을 수 있나요?</Text>
         <Text style={styles.example}>예: 커피향, 비누향, 풀내음…</Text>
@@ -21,28 +25,24 @@ export default function GPage5_Smell({ onContinue }: { onContinue: () => void })
           onChangeText={setValue}
           placeholder="느껴지는 것을 짧게 적어보세요"
           style={styles.input}
+          returnKeyType="done"
         />
 
-        <Pressable
-          onPress={onContinue}
-          disabled={!canContinue}
-          style={[styles.cta, !canContinue && styles.ctaDisabled]}
-        >
-          <Text style={[styles.ctaText, !canContinue && styles.ctaTextDisabled]}>입력</Text>
+        <Pressable onPress={onContinue} style={styles.cta}>
+          <Text style={styles.ctaText}>입력</Text>
         </Pressable>
-      </View>
+
+        <View style={{ height: 18 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const BG = "#F2F0EE";
-const DARK = "#3B3B3B";
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
-  screen: { flex: 1, backgroundColor: BG, paddingHorizontal: 20, paddingTop: 12 },
+  screen: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 22 },
 
-  h1: { fontSize: 24, fontWeight: "800", color: "#111", marginTop: 8 },
+  h1: { fontSize: 24, fontWeight: "800", color: "#111", marginTop: 6 },
   desc: { marginTop: 8, fontSize: 14, color: "#333" },
   example: { marginTop: 6, fontSize: 13, color: "#666" },
   progress: { marginTop: 12, fontSize: 13, fontWeight: "700", color: "#111" },
@@ -57,16 +57,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
   },
 
-  cta: {
-    marginTop: "auto",
-    marginBottom: 18,
-    height: 54,
-    borderRadius: 999,
-    backgroundColor: DARK,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ctaDisabled: { backgroundColor: "#B9B9B9" },
+  cta: { marginTop: 16, height: 54, borderRadius: 999, backgroundColor: DARK, alignItems: "center", justifyContent: "center" },
   ctaText: { color: "#FFF", fontSize: 16, fontWeight: "800" },
-  ctaTextDisabled: { color: "#F2F2F2" },
 });

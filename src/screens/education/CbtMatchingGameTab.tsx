@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useRef, useState } from "react";
+import { View, Text, Pressable, StyleSheet } from "react-native";
 
-type Pair = { id: string; auto: string; alt: string };
+type Pair = { id: string; automatic: string; alternative: string };
 
 function shuffle<T>(arr: T[]) {
   const a = [...arr];
@@ -12,256 +12,326 @@ function shuffle<T>(arr: T[]) {
   return a;
 }
 
-type Banner =
-  | { type: "ok"; text: string }
-  | { type: "bad"; text: string };
+type FlashTone = "hint" | "good";
+type Banner = { tone: FlashTone; text: string } | null;
+
+type MatchState = "idle" | "selected" | "matched" | "wrong";
 
 export default function CbtMatchingGameTab() {
-  const PAIRS: Pair[] = useMemo(
+  const SEED: Pair[] = useMemo(
     () => [
-      {
-        id: "p1",
-        auto: "심장이 빨리 뛰니 큰일이야",
-        alt: "심박 상승은 생리적 반응일 뿐, 위험 신호가 아닐 수 있어",
-      },
-      {
-        id: "p2",
-        auto: "또 분명 발작이 올 거야",
-        alt: "이번에는 다를 수도 있어. 호흡과 현재 행동에 집중해보자",
-      },
-      {
-        id: "p3",
-        auto: "나는 불안하면 안 돼",
-        alt: "불안은 경험할 수 있는 감정이야. 조절 연습을 하면 돼",
-      },
+      { id: "p1", automatic: "나는 분명 망할 거야", alternative: "실수할 수도 있지만, 준비한 만큼 해볼 수 있어" },
+      { id: "p2", automatic: "사람들이 다 나를 이상하게 볼 거야", alternative: "사람들은 각자 바쁘고, 모두가 나를 보진 않아" },
+      { id: "p3", automatic: "이 불안은 절대 안 사라질 거야", alternative: "지금은 불편하지만, 감정은 시간이 지나면 변해" },
+      { id: "p4", automatic: "나는 항상 이런 식이야", alternative: "항상은 아니야, 잘 해낸 경험도 있어" },
+      { id: "p5", automatic: "이번엔 완벽해야 해", alternative: "완벽보다 충분히 괜찮게 하는 게 목표야" },
+      { id: "p6", automatic: "내가 약해서 이런 거야", alternative: "지금 힘든 건 약함이 아니라 스트레스 반응일 수 있어" },
+      { id: "p7", automatic: "지금 도망치면 끝이야", alternative: "잠깐 쉬고 다시 시도해도 괜찮아" },
+      { id: "p8", automatic: "상대가 나를 싫어하는 게 분명해", alternative: "확실하지 않아, 다른 가능성도 있어" },
     ],
     []
   );
 
-  // 라운드(지금은 1라운드 MVP). 나중에 3라운드로 확장 가능.
-  const [round] = useState(1);
+  const ROUNDS = 4;
+  const PAIRS_PER_ROUND = 3;
 
-  const [autoOrder, setAutoOrder] = useState(() => shuffle(PAIRS.map((p) => p.id)));
-  const [altOrder, setAltOrder] = useState(() => shuffle(PAIRS.map((p) => p.id)));
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [banner, setBanner] = useState<Banner>(null);
 
-  const [pickedAuto, setPickedAuto] = useState<string | null>(null);
-  const [pickedAlt, setPickedAlt] = useState<string | null>(null);
-  const [matched, setMatched] = useState<string[]>([]);
+  // 라운드마다 3쌍 (seed로부터 뽑기)
+  const roundPairs = useMemo(() => {
+    const base = shuffle(SEED);
+    const start = (roundIndex * PAIRS_PER_ROUND) % Math.max(1, base.length);
+    return [...base, ...base].slice(start, start + PAIRS_PER_ROUND);
+  }, [SEED, roundIndex]);
 
-  // 게임성 상태(점수/콤보/피드백)
-  const [score, setScore] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [bestCombo, setBestCombo] = useState(0);
-  const [banner, setBanner] = useState<Banner | null>(null);
-  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leftCards = useMemo(() => roundPairs.map((p) => ({ id: p.id, text: p.automatic })), [roundPairs]);
 
-  const showBanner = (b: Banner) => {
-    setBanner(b);
-    if (bannerTimer.current) clearTimeout(bannerTimer.current);
-    bannerTimer.current = setTimeout(() => setBanner(null), 1200);
-  };
+  // 오른쪽은 섞어서 보여주기(하지만 정답 id는 유지)
+  const rightCards = useMemo(
+    () => shuffle(roundPairs.map((p) => ({ id: p.id, text: p.alternative }))),
+    [roundPairs]
+  );
 
-  const resetRound = () => {
-    setAutoOrder(shuffle(PAIRS.map((p) => p.id)));
-    setAltOrder(shuffle(PAIRS.map((p) => p.id)));
-    setPickedAuto(null);
-    setPickedAlt(null);
-    setMatched([]);
-    setScore(0);
-    setCombo(0);
-    setBestCombo(0);
-    setBanner(null);
-  };
+  // row 단위 렌더링 (좌우 줄맞춤)
+  const rows = useMemo(() => {
+    const max = Math.max(leftCards.length, rightCards.length);
+    return Array.from({ length: max }).map((_, i) => ({
+      left: leftCards[i],
+      right: rightCards[i],
+    }));
+  }, [leftCards, rightCards]);
 
-  const onShuffle = () => {
-    setAutoOrder(shuffle(PAIRS.map((p) => p.id)));
-    setAltOrder(shuffle(PAIRS.map((p) => p.id)));
-    setPickedAuto(null);
-    setPickedAlt(null);
-    showBanner({ type: "ok", text: "카드를 섞었어요" });
-  };
+  const [leftPickedId, setLeftPickedId] = useState<string | null>(null);
+  const [rightPickedId, setRightPickedId] = useState<string | null>(null);
 
-  const applyCorrect = () => {
-    setCombo((prevCombo) => {
-      const nextCombo = prevCombo + 1;
-      setBestCombo((b) => Math.max(b, nextCombo));
+  // 맞춘 쌍(초록 고정)
+  const [matchedIds, setMatchedIds] = useState<Set<string>>(() => new Set());
 
-      // 점수 규칙: 기본 +10, 콤보 보너스(2콤보부터 +2씩)
-      const bonus = nextCombo >= 2 ? (nextCombo - 1) * 2 : 0;
-      const gain = 10 + bonus;
-      setScore((s) => s + gain);
+  // 틀린 순간(빨강 1.5초) 표시용
+  const [wrongPair, setWrongPair] = useState<{ leftId: string; rightId: string } | null>(null);
+  const wrongTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-      showBanner({ type: "ok", text: `정답! +${gain} (콤보 ${nextCombo})` });
-      return nextCombo;
-    });
-  };
+  function flash(tone: FlashTone, text: string) {
+    setBanner({ tone, text });
+    setTimeout(() => setBanner(null), 900);
+  }
 
-  const applyWrong = () => {
-    setScore((s) => Math.max(0, s - 2));
-    setCombo(0);
-    showBanner({ type: "bad", text: "다시 시도해요 (점수 -2)" });
-  };
+  function resetWrongSoon() {
+    if (wrongTimer.current) clearTimeout(wrongTimer.current);
+    wrongTimer.current = setTimeout(() => {
+      setWrongPair(null);
+      setLeftPickedId(null);
+      setRightPickedId(null);
+    }, 1500);
+  }
 
-  const tryMatch = (a: string | null, b: string | null) => {
-    if (!a || !b) return;
+  function onPickLeft(id: string) {
+    if (matchedIds.has(id)) return; // 이미 맞춘 쌍은 잠금
+    if (wrongPair) return; // 빨강 표시 중에는 입력 막기(원하면 제거 가능)
 
-    if (a === b) {
-      setMatched((prev) => (prev.includes(a) ? prev : [...prev, a]));
-      setPickedAuto(null);
-      setPickedAlt(null);
-      applyCorrect();
-    } else {
-      // 오답일 때: 선택 흐름은 유지하되, 사용자가 바로 다시 고를 수 있게 alt만 해제
-      setPickedAlt(null);
-      applyWrong();
+    setLeftPickedId((prev) => (prev === id ? null : id));
+    setRightPickedId(null); // 왼쪽 새로 고르면 오른쪽은 리셋하는 편이 UX 안정적
+  }
+
+  function onPickRight(id: string) {
+    if (matchedIds.has(id)) return;
+    if (wrongPair) return;
+
+    if (!leftPickedId) {
+      flash("hint", "먼저 자동적 사고를 하나 골라줘");
+      return;
     }
-  };
 
-  const done = matched.length === PAIRS.length;
+    // 오른쪽 선택 순간 매칭 판정
+    const ok = leftPickedId === id;
+    if (ok) {
+      setMatchedIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+      setLeftPickedId(null);
+      setRightPickedId(null);
+      flash("good", "좋아! 이 짝이 맞아");
+      return;
+    }
+
+    // 틀렸으면 빨강 1.5초 → 리셋
+    setRightPickedId(id);
+    setWrongPair({ leftId: leftPickedId, rightId: id });
+    resetWrongSoon();
+  }
+
+  function prevRound() {
+    if (wrongTimer.current) clearTimeout(wrongTimer.current);
+    setBanner(null);
+    setWrongPair(null);
+    setLeftPickedId(null);
+    setRightPickedId(null);
+    setMatchedIds(new Set());
+    setRoundIndex((r) => (r - 1 + ROUNDS) % ROUNDS);
+  }
+
+  function nextRound() {
+    if (wrongTimer.current) clearTimeout(wrongTimer.current);
+    setBanner(null);
+    setWrongPair(null);
+    setLeftPickedId(null);
+    setRightPickedId(null);
+    setMatchedIds(new Set());
+    setRoundIndex((r) => (r + 1) % ROUNDS);
+  }
+
+  function getCardVisualState(side: "left" | "right", id: string): MatchState {
+    if (matchedIds.has(id)) return "matched";
+
+    if (wrongPair) {
+      if (side === "left" && wrongPair.leftId === id) return "wrong";
+      if (side === "right" && wrongPair.rightId === id) return "wrong";
+    }
+
+    if (side === "left" && leftPickedId === id) return "selected";
+    // 오른쪽은 “선택 표시”를 굳이 안 해도 되지만, 틀렸을 때 빨강을 보여주려면 rightPickedId를 유지
+    if (side === "right" && rightPickedId === id) return "selected";
+
+    return "idle";
+  }
+
+  const progress = (roundIndex + 1) / ROUNDS;
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.topRow}>
-        <Text style={styles.progress}>라운드 {round} / 1</Text>
+    <View style={styles.container}>
+      <View style={styles.top}>
+        <Text style={styles.title}>CBT 매칭</Text>
+        <Text style={styles.sub}>Round {roundIndex + 1} / {ROUNDS}</Text>
 
-        <View style={styles.scoreBox}>
-          <Text style={styles.scoreText}>점수 {score}</Text>
-          <Text style={styles.comboText}>콤보 {combo} (최고 {bestCombo})</Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
         </View>
 
-        <Pressable onPress={onShuffle} style={styles.shuffleBtn}>
-          <Text style={styles.shuffleText}>카드 섞기</Text>
+        {!!banner && (
+          <View style={[styles.banner, banner.tone === "good" ? styles.bannerGood : styles.bannerHint]}>
+            <Text style={styles.bannerText}>{banner.text}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.headers}>
+        <Text style={styles.colHeader}>자동적 사고</Text>
+        <Text style={styles.colHeader}>대안적 사고</Text>
+      </View>
+
+      <View style={styles.grid}>
+        {rows.map((row, idx) => {
+          const left = row.left;
+          const right = row.right;
+
+          return (
+            <View key={`row-${idx}`} style={styles.row}>
+              <View style={styles.cell}>
+                {left ? (
+                  <Pressable
+                    onPress={() => onPickLeft(left.id)}
+                    style={[
+                      styles.card,
+                      getStyleByState(getCardVisualState("left", left.id), "left"),
+                    ]}
+                  >
+                    <Text style={styles.cardText} numberOfLines={3}>
+                      {left.text}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.cardPlaceholder} />
+                )}
+              </View>
+
+              <View style={styles.cell}>
+                {right ? (
+                  <Pressable
+                    onPress={() => onPickRight(right.id)}
+                    style={[
+                      styles.card,
+                      getStyleByState(getCardVisualState("right", right.id), "right"),
+                    ]}
+                  >
+                    <Text style={styles.cardText} numberOfLines={3}>
+                      {right.text}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.cardPlaceholder} />
+                )}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* 버튼: 이전 | 다음 (크기/위치 동일 유지) */}
+      <View style={styles.actions}>
+        <Pressable style={[styles.btn, styles.btnGhost]} onPress={prevRound}>
+          <Text style={[styles.btnText, styles.btnGhostText]}>이전</Text>
+        </Pressable>
+
+        <Pressable style={[styles.btn, styles.btnGhost]} onPress={nextRound}>
+          <Text style={[styles.btnText, styles.btnGhostText]}>다음</Text>
         </Pressable>
       </View>
 
-      {!!banner && (
-        <View style={[styles.banner, banner.type === "ok" ? styles.bannerOk : styles.bannerBad]}>
-          <Text style={styles.bannerText}>{banner.text}</Text>
-        </View>
-      )}
-
-      <Text style={styles.hint}>자동적 사고(왼쪽)와 대안적 사고(오른쪽)를 맞춰보세요.</Text>
-
-      <View style={styles.grid}>
-        <View style={styles.col}>
-          <Text style={styles.colTitle}>자동적 사고</Text>
-          {autoOrder.map((id, i) => {
-            const p = PAIRS.find((x) => x.id === id)!;
-            const locked = matched.includes(id);
-            const on = pickedAuto === id;
-
-            return (
-              <Pressable
-                key={`${id}-${i}`}
-                disabled={locked}
-                onPress={() => {
-                  setPickedAuto(id);
-                  tryMatch(id, pickedAlt);
-                }}
-                style={[styles.card, on && styles.cardOn, locked && styles.cardLocked]}
-              >
-                <Text style={[styles.cardText, on && styles.cardTextOn]}>{p.auto}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.col}>
-          <Text style={styles.colTitle}>대안적 사고</Text>
-          {altOrder.map((id, i) => {
-            const p = PAIRS.find((x) => x.id === id)!;
-            const locked = matched.includes(id);
-            const on = pickedAlt === id;
-
-            return (
-              <Pressable
-                key={`${id}-${i}`}
-                disabled={locked}
-                onPress={() => {
-                  setPickedAlt(id);
-                  tryMatch(pickedAuto, id);
-                }}
-                style={[styles.card, on && styles.cardOn, locked && styles.cardLocked]}
-              >
-                <Text style={[styles.cardText, on && styles.cardTextOn]}>{p.alt}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {done ? (
-        <View style={styles.doneBox}>
-          <Text style={styles.doneTitle}>완료!</Text>
-          <Text style={styles.doneDesc}>총점 {score}점 · 최고 콤보 {bestCombo}</Text>
-
-          <Pressable onPress={resetRound} style={styles.retryBtn}>
-            <Text style={styles.retryText}>한 번 더 하기</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <Text style={styles.footerHint}>
-          맞춘 카드: {matched.length} / {PAIRS.length}
-        </Text>
-      )}
+      <Text style={styles.help}>자동적 사고와 대안적 사고를 배워봐요 페이지.</Text>
     </View>
   );
 }
 
-const DARK = "#3B3B3B";
-const CARD = "#FFFFFF";
+const CARD_MIN_H = 96;
+
+function getStyleByState(state: MatchState, side: "left" | "right") {
+  if (state === "matched") return side === "left" ? styles.cardMatched : styles.cardMatched;
+  if (state === "wrong") return styles.cardWrong;
+  if (state === "selected") return styles.cardSelectedBlue;
+  return null;
+}
 
 const styles = StyleSheet.create({
-  topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  progress: { color: DARK, fontWeight: "900" },
+  container: { padding: 16, paddingBottom: 12 },
+  top: { marginBottom: 10 },
+  title: { fontSize: 18, fontWeight: "700" },
+  sub: { marginTop: 4, color: "#666" },
 
-  scoreBox: { alignItems: "center" },
-  scoreText: { color: DARK, fontWeight: "900" },
-  comboText: { color: "rgba(0,0,0,0.55)", fontWeight: "800", fontSize: 12, marginTop: 2 },
-
-  shuffleBtn: { backgroundColor: "rgba(0,0,0,0.06)", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 999 },
-  shuffleText: { color: DARK, fontWeight: "900" },
+  progressTrack: {
+    marginTop: 10,
+    height: 8,
+    borderRadius: 99,
+    backgroundColor: "#E9EEF5",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#4C7DFF",
+    borderRadius: 99,
+  },
 
   banner: {
-    borderRadius: 14,
+    marginTop: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 10,
+    borderRadius: 12,
   },
-  bannerOk: { backgroundColor: "rgba(59,59,59,0.12)" },
-  bannerBad: { backgroundColor: "rgba(255,0,0,0.10)" },
-  bannerText: { color: DARK, fontWeight: "900", textAlign: "center" },
+  bannerGood: { backgroundColor: "#E8F7EF" },
+  bannerHint: { backgroundColor: "#EEF3FF" },
+  bannerText: { color: "#1E1E1E", fontWeight: "600" },
 
-  hint: { color: "rgba(0,0,0,0.55)", fontWeight: "700", marginBottom: 10 },
+  headers: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  colHeader: { flex: 1, color: "#666", fontWeight: "700" },
 
-  grid: { flexDirection: "row", gap: 10, flex: 1 },
-  col: { flex: 1, gap: 10 },
-  colTitle: { color: DARK, fontWeight: "900", marginBottom: 2 },
+  grid: {},
+  row: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  cell: { flex: 1 },
 
-  card: { backgroundColor: CARD, borderRadius: 18, padding: 12 },
-  cardOn: { backgroundColor: DARK },
-  cardLocked: { opacity: 0.45 },
-  cardText: { color: DARK, fontWeight: "800", lineHeight: 18 },
-  cardTextOn: { color: "#fff" },
+  card: {
+    minHeight: CARD_MIN_H,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: "#F7F8FA",
+    borderWidth: 1,
+    borderColor: "#E6E8EE",
+    justifyContent: "center",
+  },
+  cardText: { color: "#1E1E1E", fontSize: 14, lineHeight: 19 },
 
-  footerHint: { marginTop: 10, color: "rgba(0,0,0,0.55)", fontWeight: "800" },
+  cardSelectedBlue: { borderColor: "#4C7DFF", backgroundColor: "#EEF3FF" },
+  cardMatched: { borderColor: "#27AE60", backgroundColor: "#E8F7EF" },
+  cardWrong: { borderColor: "#EF4444", backgroundColor: "#FEE2E2" },
 
-  doneBox: {
-    marginTop: 12,
-    backgroundColor: CARD,
-    borderRadius: 18,
-    padding: 14,
+  cardPlaceholder: {
+    minHeight: CARD_MIN_H,
+    borderRadius: 14,
+    backgroundColor: "transparent",
+  },
+
+  actions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
     alignItems: "center",
   },
-  doneTitle: { color: DARK, fontWeight: "900", fontSize: 16 },
-  doneDesc: { marginTop: 6, color: "rgba(0,0,0,0.55)", fontWeight: "800" },
-
-  retryBtn: {
-    marginTop: 12,
-    backgroundColor: DARK,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 999,
+  btn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  retryText: { color: "#fff", fontWeight: "900" },
+  btnGhost: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E6E8EE" },
+  btnText: { color: "#FFFFFF", fontWeight: "800" },
+  btnGhostText: { color: "#111827" },
+
+  help: { marginTop: 10, color: "#6B7280", fontSize: 12 },
 });
